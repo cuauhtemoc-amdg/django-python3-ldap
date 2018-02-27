@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from django.contrib.auth import get_user_model
 from django_python3_ldap.conf import settings
 from django_python3_ldap.utils import import_func, format_search_filter
-
+from django.db.utils import DataError
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +62,25 @@ class Connection(object):
             in settings.LDAP_AUTH_USER_LOOKUP_FIELDS
         }
         # Update or create the user.
-        user, created = User.objects.update_or_create(
-            defaults=user_fields,
-            **user_lookup
-        )
-        # If the user was created, set them an unusable password.
-        if created:
-            user.set_unusable_password()
-            user.save()
-        # Update relations
-        import_func(settings.LDAP_AUTH_SYNC_USER_RELATIONS)(user, attributes)
-        # All done!
-        logger.info("LDAP user lookup succeeded")
+        user = None
+        try:
+            user, created = User.objects.update_or_create(
+                defaults=user_fields,
+                **user_lookup
+            )
+            # If the user was created, set them an unusable password.
+            if created:
+                user.set_unusable_password()
+                user.save()
+
+            # Update relations
+            import_func(settings.LDAP_AUTH_SYNC_USER_RELATIONS)(user, attributes)
+            # All done!
+            logger.info("LDAP user lookup succeeded")
+
+        except DataError:
+            logger.error("DB Error updating user, oh well!")
+
         return user
 
     def iter_users(self):
